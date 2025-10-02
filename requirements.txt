@@ -1,0 +1,27 @@
+# カラーサイズメンテナンスツール 依存関係
+
+# Webアプリケーションフレームワーク
+streamlit>=1.28.0
+
+# データベース接続
+sqlalchemy>=2.0.0
+pyodbc>=4.0.0
+PyMySQL>=1.1.0
+
+# データ処理
+pandas>=2.0.0
+numpy>=1.24.0
+
+# 設定管理
+python-dotenv>=1.0.0
+
+# ログ出力
+loguru>=0.7.0
+
+# 実行ファイル作成
+pyinstaller>=5.13.0
+
+# 開発・テスト用
+pytest>=7.4.0
+black>=23.0.0
+flake8>=6.0.0
