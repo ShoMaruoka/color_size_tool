@@ -174,9 +174,14 @@ def show_data_retrieval_page():
 
 def show_conversion_page():
     """変換処理ページ"""
-    st.title("🔄 変換処理")
-    st.markdown("---")
-    st.info("Phase 3で実装予定です")
+    try:
+        from pages.conversion_processing import show_conversion_page
+        show_conversion_page()
+    except ImportError as e:
+        st.title("🔄 変換処理")
+        st.markdown("---")
+        st.error(f"変換処理ページのモジュールが見つかりません: {e}")
+        st.info("変換処理機能を準備中です...")
 
 def show_conversion_table_page():
     """変換表管理ページ"""
