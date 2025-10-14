@@ -6,6 +6,7 @@ from datetime import datetime, date, timedelta
 import pandas as pd
 
 from services.database_service import DatabaseService
+from services.data_service import DataService
 from config.database import DatabaseConfig
 from config.logging_config import app_logger
 from models.product import ProductFilter
@@ -26,8 +27,17 @@ def show_data_retrieval_page():
             help="接続するデータベースのタイプを選択してください"
         )
         
-        if st.button("接続テスト", type="primary"):
-            test_database_connection(db_type)
+        # 接続設定の詳細表示
+        show_connection_settings(db_type)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("接続テスト", type="primary", use_container_width=True):
+                test_database_connection(db_type)
+        
+        with col2:
+            if st.button("設定検証", use_container_width=True):
+                validate_connection_settings(db_type)
     
     # メインコンテンツ
     col1, col2 = st.columns([2, 1])
@@ -134,6 +144,9 @@ def retrieve_data(
     """データを取得"""
     try:
         with st.spinner("データを取得中..."):
+            # データサービスを初期化
+            data_service = DataService()
+            
             # フィルター条件を構築
             product_filter = ProductFilter(
                 start_date=datetime.combine(start_date, datetime.min.time()),
@@ -142,21 +155,27 @@ def retrieve_data(
                 color_name_pattern=color_name_pattern if color_name_pattern else None,
                 size_name_pattern=size_name_pattern if size_name_pattern else None,
                 has_color_id=_convert_filter_option(has_color_id),
-                has_size_id=_convert_filter_option(has_size_id)
+                has_size_id=_convert_filter_option(has_size_id),
+                limit=1000  # 表示件数制限
             )
             
-            # データ取得（実際の実装では、適切なSQLクエリを実行）
-            # ここではサンプルデータを表示
-            sample_data = create_sample_data()
+            # データ取得
+            if db_type == 'sqlite':
+                # SQLiteの場合はサンプルデータを使用
+                products = data_service.get_sample_products()
+            else:
+                # 実際のデータベースから取得
+                products = data_service.get_products(product_filter, db_type)
             
             # セッション状態に保存
-            st.session_state['retrieved_data'] = sample_data
+            st.session_state['retrieved_data'] = [product.to_dict() for product in products]
             st.session_state['product_filter'] = product_filter
+            st.session_state['db_type'] = db_type
             
-            st.success(f"✅ {len(sample_data)}件のデータを取得しました")
+            st.success(f"✅ {len(products)}件のデータを取得しました")
             
             # データプレビューを表示
-            show_data_preview(sample_data)
+            show_data_preview([product.to_dict() for product in products])
             
     except Exception as e:
         st.error(f"❌ データ取得中にエラーが発生しました: {str(e)}")
@@ -166,14 +185,23 @@ def show_statistics(db_type: str, start_date: date, end_date: date):
     """統計情報を表示"""
     try:
         with st.spinner("統計情報を取得中..."):
-            # サンプル統計データ
-            stats = {
-                'total_products': 1250,
-                'converted_colors': 980,
-                'converted_sizes': 1100,
-                'pending_conversions': 150,
-                'conversion_rate': 0.85
-            }
+            # データサービスを初期化
+            data_service = DataService()
+            
+            # フィルター条件を構築
+            product_filter = ProductFilter(
+                start_date=datetime.combine(start_date, datetime.min.time()),
+                end_date=datetime.combine(end_date, datetime.max.time())
+            )
+            
+            # 統計情報を取得
+            if db_type == 'sqlite':
+                # SQLiteの場合はサンプルデータから統計を計算
+                products = data_service.get_sample_products()
+                stats = _calculate_sample_statistics(products)
+            else:
+                # 実際のデータベースから統計を取得
+                stats = data_service.get_product_statistics(product_filter, db_type)
             
             col1, col2, col3, col4 = st.columns(4)
             
@@ -236,40 +264,83 @@ def show_data_preview(data: list):
         mime="text/csv"
     )
 
-def create_sample_data() -> list:
-    """サンプルデータを作成"""
-    return [
-        {
-            'product_id': 'TSH001',
-            'product_name': 'Tシャツ 基本型',
-            'color_name': 'レッド',
-            'size_name': 'M',
-            'composite_value': 'レッド/M',
-            'color_id': 1,
-            'size_id': 2,
-            'created_at': '2024-12-01 10:00:00'
-        },
-        {
-            'product_id': 'TSH002',
-            'product_name': 'Tシャツ 基本型',
-            'color_name': 'ブルー',
-            'size_name': 'L',
-            'composite_value': 'ブルー/L',
-            'color_id': 2,
-            'size_id': 3,
-            'created_at': '2024-12-01 10:05:00'
-        },
-        {
-            'product_id': 'TSH003',
-            'product_name': 'Tシャツ 基本型',
-            'color_name': 'グリーン',
-            'size_name': 'S',
-            'composite_value': 'グリーン/S',
-            'color_id': None,
-            'size_id': 1,
-            'created_at': '2024-12-01 10:10:00'
-        }
-    ]
+def _calculate_sample_statistics(products) -> dict:
+    """サンプルデータから統計を計算"""
+    total = len(products)
+    converted_colors = sum(1 for p in products if p.color_id is not None)
+    converted_sizes = sum(1 for p in products if p.size_id is not None)
+    pending = sum(1 for p in products if p.color_id is None and p.size_id is None)
+    
+    conversion_rate = (converted_colors + converted_sizes) / (total * 2) if total > 0 else 0.0
+    
+    return {
+        'total_products': total,
+        'converted_colors': converted_colors,
+        'converted_sizes': converted_sizes,
+        'pending_conversions': pending,
+        'conversion_rate': conversion_rate
+    }
+
+def show_connection_settings(db_type: str):
+    """接続設定を表示"""
+    try:
+        data_service = DataService()
+        config = data_service.db_service.config
+        
+        if db_type == 'sqlite':
+            st.info("📁 SQLite設定")
+            st.text(f"データベース: {config.sqlite_config['database']}")
+            st.success("✅ SQLiteは設定不要です")
+            
+        elif db_type == 'sqlserver':
+            st.info("🗄️ SQL Server設定")
+            config_data = config.sqlserver_config
+            st.text(f"サーバー: {config_data['server']}")
+            st.text(f"データベース: {config_data['database']}")
+            st.text(f"ドライバー: {config_data['driver']}")
+            
+            if config_data['trusted_connection'] == 'yes':
+                st.text("認証: Windows認証")
+            else:
+                st.text(f"ユーザー: {config_data['uid']}")
+                st.text("認証: SQL認証")
+                
+        elif db_type == 'mariadb':
+            st.info("🐬 MariaDB設定")
+            config_data = config.mariadb_config
+            st.text(f"ホスト: {config_data['host']}:{config_data['port']}")
+            st.text(f"データベース: {config_data['database']}")
+            st.text(f"ユーザー: {config_data['user']}")
+            
+        # 設定検証結果を表示
+        validation_result = data_service.validate_connection_settings(db_type)
+        if validation_result['is_valid']:
+            st.success("✅ " + validation_result['message'])
+        else:
+            st.error("❌ " + validation_result['message'])
+            if 'missing_fields' in validation_result:
+                st.warning(f"不足項目: {', '.join(validation_result['missing_fields'])}")
+                
+    except Exception as e:
+        st.error(f"❌ 設定表示エラー: {str(e)}")
+        app_logger.error(f"接続設定表示エラー: {e}")
+
+def validate_connection_settings(db_type: str):
+    """接続設定を検証"""
+    try:
+        data_service = DataService()
+        validation_result = data_service.validate_connection_settings(db_type)
+        
+        if validation_result['is_valid']:
+            st.success("✅ " + validation_result['message'])
+        else:
+            st.error("❌ " + validation_result['message'])
+            if 'missing_fields' in validation_result:
+                st.warning(f"不足項目: {', '.join(validation_result['missing_fields'])}")
+                
+    except Exception as e:
+        st.error(f"❌ 設定検証エラー: {str(e)}")
+        app_logger.error(f"接続設定検証エラー: {e}")
 
 def _convert_filter_option(option: str) -> bool:
     """フィルターオプションを変換"""
