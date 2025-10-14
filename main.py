@@ -191,9 +191,14 @@ def show_conversion_table_page():
 
 def show_data_registration_page():
     """データ登録ページ"""
-    st.title("💾 データ登録")
-    st.markdown("---")
-    st.info("Phase 4で実装予定です")
+    try:
+        from pages.data_registration import show_data_registration_page
+        show_data_registration_page()
+    except ImportError as e:
+        st.title("💾 データ登録")
+        st.markdown("---")
+        st.error(f"データ登録ページのモジュールが見つかりません: {e}")
+        st.info("データ登録機能を準備中です...")
 
 def show_settings_page():
     """設定ページ"""
